@@ -46,7 +46,7 @@ func HttpHandler(w http.ResponseWriter, r *http.Request, v lookerWebhook) {
 	// respond to the client with the error message and a 400 status code.
 	err := json.NewDecoder(r.Body).Decode(&rB)
 	if err != nil {
-		log.Printf("Could not unmarshal request Body")
+		log.Printf("Could not unmarshal request Body : %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -59,14 +59,14 @@ func HttpHandler(w http.ResponseWriter, r *http.Request, v lookerWebhook) {
 
 	rawZip, err := base64.StdEncoding.DecodeString(rB.Attachment.Data)
 	if err != nil {
-		log.Printf("Could not decode request Body Data")
+		log.Printf("Could not decode request Body Data : %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	archive, err := zip.OpenReader(string(rawZip))
 	if err != nil {
-		log.Printf("Could not unzip the payload data")
+		log.Printf("Could not unzip the payload data : %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
