@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"log"
@@ -46,7 +47,7 @@ func HttpHandler(w http.ResponseWriter, r *http.Request, v lookerWebhook) {
 	// respond to the client with the error message and a 400 status code.
 	err := json.NewDecoder(r.Body).Decode(&rB)
 	if err != nil {
-		log.Printf("Could not unmarshal request Body : %s", err)
+		log.Printf("Could not unmarshal request Body : %s", err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -59,18 +60,19 @@ func HttpHandler(w http.ResponseWriter, r *http.Request, v lookerWebhook) {
 
 	rawZip, err := base64.StdEncoding.DecodeString(rB.Attachment.Data)
 	if err != nil {
-		log.Printf("Could not decode request Body Data : %s", err)
+		log.Printf("Could not decode request Body Data : %s", err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	archive, err := zip.OpenReader(string(rawZip))
+	ioreader := bytes.NewReader(rawZip)
+
+	archive, err := zip.NewReader(ioreader, ioreader.Size())
 	if err != nil {
-		log.Printf("Could not unzip the payload data : %s", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Printf("Could not unzip the payload data : %s", err.Error()[0:50])
+		http.Error(w, err.Error()[0:50], http.StatusBadRequest)
 		return
 	}
-	defer archive.Close()
 
 	for _, file := range archive.File {
 		log.Printf("%s\n", file.Name)
