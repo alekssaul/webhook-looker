@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/zip"
+	"encoding/base64"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -55,13 +57,26 @@ func HttpHandler(w http.ResponseWriter, r *http.Request, v lookerWebhook) {
 		return
 	}
 
-	// rawZip, err := base64.StdEncoding.DecodeString(rB.Attachment.Data)
-	// if err != nil {
-	// 	log.Printf("Could not decode request Body Data")
-	// 	http.Error(w, err.Error(), http.StatusBadRequest)
-	// 	return
-	// }
+	rawZip, err := base64.StdEncoding.DecodeString(rB.Attachment.Data)
+	if err != nil {
+		log.Printf("Could not decode request Body Data")
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
-	log.Printf("%s\n", rB.Attachment.Data)
+	archive, err := zip.OpenReader(string(rawZip))
+	if err != nil {
+		log.Printf("Could not unzip the payload data")
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer archive.Close()
+
+	for _, file := range archive.File {
+		log.Printf("%s\n", file.Name)
+
+	}
+
+	w.WriteHeader(http.StatusOK)
 
 }
