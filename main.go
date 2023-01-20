@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 )
@@ -19,14 +20,14 @@ func main() {
 func HttpHandler(w http.ResponseWriter, r *http.Request) {
 	reqHeadersBytes, err := json.Marshal(r.Header)
 	if err != nil {
-		log.Println("Could not Marshal Req Headers")
+		fmt.Println("Could not Marshal Req Headers")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	reqBodyBytes, err := json.Marshal(r.Body)
 	if err != nil {
-		log.Println("Could not Marshal Req Body")
+		fmt.Println("Could not Marshal Req Body")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -38,7 +39,7 @@ func HttpHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotImplemented)
 	}
 
-	log.Printf("Request Headers: %s", reqHeadersBytes)
-	log.Printf("Request Body: %s", reqBodyBytes)
+	fmt.Printf("Request Headers: %s", reqHeadersBytes)
+	fmt.Printf("Request Body: %s", reqBodyBytes)
 
 }
