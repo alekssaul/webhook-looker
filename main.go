@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -17,6 +19,11 @@ func init() {
 	// A timestamp is added when shipping logs to Cloud Logging.
 	log.SetFlags(0)
 }
+
+const (
+	gcsbucket      = "webhook-looker-6814"
+	lookerdatafile = "dashboard-svod_vix_daily_kpis/users_2.csv"
+)
 
 func main() {
 	// init Looker Webhook validation
@@ -47,7 +54,7 @@ func HttpHandler(w http.ResponseWriter, r *http.Request, v lookerWebhook) {
 	// respond to the client with the error message and a 400 status code.
 	err := json.NewDecoder(r.Body).Decode(&rB)
 	if err != nil {
-		log.Printf("Could not unmarshal request Body : %s", err.Error())
+		log.Printf("Could not unmarshal request Body : %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -58,27 +65,45 @@ func HttpHandler(w http.ResponseWriter, r *http.Request, v lookerWebhook) {
 		return
 	}
 
-	rawZip, err := base64.StdEncoding.DecodeString(rB.Attachment.Data)
+	err = DataFromZipToGCS(rB.Attachment.Data, lookerdatafile)
 	if err != nil {
-		log.Printf("Could not decode request Body Data : %s", err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	ioreader := bytes.NewReader(rawZip)
+	w.WriteHeader(http.StatusOK)
 
-	archive, err := zip.NewReader(ioreader, ioreader.Size())
+}
+
+// DataFromZipToGCS - gets data from base64 encoded zip file
+func DataFromZipToGCS(b64 string, fname string) (e error) {
+	rawZip, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
-		log.Printf("Could not unzip the payload data : %s", err.Error()[0:50])
-		http.Error(w, err.Error()[0:50], http.StatusBadRequest)
-		return
+		return fmt.Errorf("could not decode request Body Data : %v", err)
+	}
+
+	// Read rawZip with zip module and loop over contents
+	archive, err := zip.NewReader(bytes.NewReader(rawZip), bytes.NewReader(rawZip).Size())
+	if err != nil {
+		return fmt.Errorf("could not unzip the payload data : %v", err.Error()[0:50])
 	}
 
 	for _, file := range archive.File {
-		log.Printf("%s\n", file.Name)
+		if file.Name == fname {
+			// write to GCS
+			log.Printf("%s\n", file.Name)
+			flatfile, err := file.Open()
+			if err != nil {
+				return fmt.Errorf("could not retrieve contents of %s : %v ", file.Name, err)
+			}
+
+			filearray, _ := io.ReadAll(flatfile)
+			WriteFileToGCS(gcsbucket, lookerdatafile, filearray)
+
+			return nil
+		}
 
 	}
 
-	w.WriteHeader(http.StatusOK)
-
+	return nil
 }
