@@ -10,6 +10,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
+	"time"
 )
 
 // https://github.com/GoogleCloudPlatform/golang-samples/blob/HEAD/run/logging-manual/main.go
@@ -21,11 +23,18 @@ func init() {
 }
 
 const (
-	gcsbucket      = "webhook-looker-6814"
 	lookerdatafile = "dashboard-svod_vix_daily_kpis/users_2.csv"
 )
 
+type config struct {
+	gcsbucket string
+}
+
 func main() {
+	// init Configuration
+	var c config
+	c.gcsbucket = os.Getenv("bucketname")
+
 	// init Looker Webhook validation
 	validation := lookerWebhook{}
 	validation.LookerInstance = os.Getenv("X-Looker-Instance")
@@ -33,14 +42,14 @@ func main() {
 
 	// http handler
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		HttpHandler(w, r, validation)
+		HttpHandler(w, r, c, validation)
 	})
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
 // HttpHandler Handles the HTTP call
-func HttpHandler(w http.ResponseWriter, r *http.Request, v lookerWebhook) {
+func HttpHandler(w http.ResponseWriter, r *http.Request, appconfig config, v lookerWebhook) {
 	// validate the Looker headers
 	if v.LookerInstance != r.Header.Get("X-Looker-Instance") || v.LookerWebhookToken != r.Header.Get("X-Looker-Webhook-Token") {
 		log.Println("Could Not validate Looker headers")
@@ -65,7 +74,7 @@ func HttpHandler(w http.ResponseWriter, r *http.Request, v lookerWebhook) {
 		return
 	}
 
-	err = DataFromZipToGCS(rB.Attachment.Data, lookerdatafile)
+	err = DataFromZipToGCS(rB.Attachment.Data, lookerdatafile, &appconfig)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -76,7 +85,7 @@ func HttpHandler(w http.ResponseWriter, r *http.Request, v lookerWebhook) {
 }
 
 // DataFromZipToGCS - gets data from base64 encoded zip file
-func DataFromZipToGCS(b64 string, fname string) (e error) {
+func DataFromZipToGCS(b64 string, fname string, appconfig *config) (e error) {
 	rawZip, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		return fmt.Errorf("could not decode request Body Data : %v", err)
@@ -90,19 +99,21 @@ func DataFromZipToGCS(b64 string, fname string) (e error) {
 
 	for _, file := range archive.File {
 		if file.Name == fname {
+			targetobj := strings.Replace(fname, ".csv", "_"+fmt.Sprintf("%v", time.Now().Unix())+".csv", 1)
 			// write to GCS
-			log.Printf("%s\n", file.Name)
+			log.Printf("Transfering %s to bucket: %s/%s\n", file.Name, appconfig.gcsbucket, targetobj)
 			flatfile, err := file.Open()
 			if err != nil {
 				return fmt.Errorf("could not retrieve contents of %s : %v ", file.Name, err)
 			}
 
 			filearray, _ := io.ReadAll(flatfile)
-			WriteFileToGCS(gcsbucket, lookerdatafile, filearray)
+			err = WriteFileToGCS(appconfig.gcsbucket, targetobj, filearray)
+			if err != nil {
+				return err
+			}
 
-			return nil
 		}
-
 	}
 
 	return nil
