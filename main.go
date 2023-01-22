@@ -116,7 +116,7 @@ func DataFromZipToGCS(b64 string, dashboard *Dashboard) (e error) {
 	for _, file := range archive.File {
 		for _, archive := range dashboard.Archives {
 			if file.Name == archive.Filename {
-				targetobj := archive.Destinationprefix + "_" + fmt.Sprintf("%v", time.Now().Unix()) + ".csv"
+				targetobj := archive.Destinationprefix + "-" + fmt.Sprintf("%v", time.Now().Unix()) + ".csv"
 				// write to GCS
 				log.Printf("Transfering %s to bucket: %s/%s\n", file.Name, dashboard.Bucket, targetobj)
 				flatfile, err := file.Open()
