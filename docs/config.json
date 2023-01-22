@@ -1,0 +1,24 @@
+{
+    "dashboards": [
+      {
+        "name": "Looker Dashboard 1",
+        "bucket": "webhook-looker-bucker",
+        "archives": [{
+          "filename": "dashboard-looker-dashboard-1/users.csv",
+          "destinationprefix": "renamed_file_users"
+        }]
+      },
+      {
+        "name": "Looker Dashboard 2",
+        "bucket": "webhook-looker-bucket",
+        "archives": [{
+          "filename": "dashboard-looker-dashboard-2/users.csv",
+          "destinationprefix": "folder/renamed_file_users"
+        },{
+            "filename": "dashboard-looker-dashboard-2/metrics.csv",
+            "destinationprefix": "folder/renamed_file_metrics"
+          }
+        ]
+      }
+    ]
+  }

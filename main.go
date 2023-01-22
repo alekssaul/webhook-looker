@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -22,35 +21,35 @@ func init() {
 	log.SetFlags(0)
 }
 
-const (
-	lookerdatafile = "dashboard-svod_vix_daily_kpis/users_2.csv"
-)
-
-type config struct {
-	gcsbucket string
-}
-
 func main() {
-	// init Configuration
-	var c config
-	c.gcsbucket = os.Getenv("bucketname")
-
 	// init Looker Webhook validation
 	validation := lookerWebhook{}
 	validation.LookerInstance = os.Getenv("X-Looker-Instance")
 	validation.LookerWebhookToken = os.Getenv("X-Looker-Webhook-Token")
 
+	// get Application configuration from EnvVar configfile which is an object in GCS
+	var config AppConfig
+	err := config.InitConfig(os.Getenv("configfile"))
+	if err != nil {
+		log.Fatalf("Could not fetch the application config %s, error : %v\n", os.Getenv("configfile"), err)
+	}
+
+	log.Printf("AppConfig : %v", config)
+
 	// http handler
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		HttpHandler(w, r, c, validation)
+		HttpHandler(w, r, &config, validation)
 	})
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
 // HttpHandler Handles the HTTP call
-func HttpHandler(w http.ResponseWriter, r *http.Request, appconfig config, v lookerWebhook) {
+func HttpHandler(w http.ResponseWriter, r *http.Request, appconfig *AppConfig, v lookerWebhook) {
 	// validate the Looker headers
+	log.Printf("Recieved request with X-Looker-Instance: %s, X-Looker-Webhook-Token: %s",
+		r.Header.Get("X-Looker-Instance"),
+		r.Header.Get("X-Looker-Webhook-Token"))
 	if v.LookerInstance != r.Header.Get("X-Looker-Instance") || v.LookerWebhookToken != r.Header.Get("X-Looker-Webhook-Token") {
 		log.Println("Could Not validate Looker headers")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -64,7 +63,7 @@ func HttpHandler(w http.ResponseWriter, r *http.Request, appconfig config, v loo
 	err := json.NewDecoder(r.Body).Decode(&rB)
 	if err != nil {
 		log.Printf("Could not unmarshal request Body : %v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "Request Body data not supported", http.StatusBadRequest)
 		return
 	}
 
@@ -74,10 +73,27 @@ func HttpHandler(w http.ResponseWriter, r *http.Request, appconfig config, v loo
 		return
 	}
 
-	err = DataFromZipToGCS(rB.Attachment.Data, lookerdatafile, &appconfig)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	log.Printf("Webhook for Dashboard : %s \n", rB.ScheduledPlan.Title)
+
+	// Check to see if we have a configuration for the request
+	found := false
+	for i, dashboard := range appconfig.Dashboards {
+		log.Printf("Webhook for Dashboard : %s \n", rB.ScheduledPlan.Title)
+		// find Configuration for Request Body
+		if dashboard.Name == rB.ScheduledPlan.Title {
+			found = true
+			log.Printf("Found configuration for request dashboard : %s", dashboard.Name)
+			err = DataFromZipToGCS(rB.Attachment.Data, &dashboard)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+
+		if !found && i == len(appconfig.Dashboards) {
+			log.Printf("Could not find configuration for request dashboard : %s", dashboard.Name)
+			w.WriteHeader(http.StatusNotImplemented)
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -85,7 +101,7 @@ func HttpHandler(w http.ResponseWriter, r *http.Request, appconfig config, v loo
 }
 
 // DataFromZipToGCS - gets data from base64 encoded zip file
-func DataFromZipToGCS(b64 string, fname string, appconfig *config) (e error) {
+func DataFromZipToGCS(b64 string, dashboard *Dashboard) (e error) {
 	rawZip, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		return fmt.Errorf("could not decode request Body Data : %v", err)
@@ -98,21 +114,22 @@ func DataFromZipToGCS(b64 string, fname string, appconfig *config) (e error) {
 	}
 
 	for _, file := range archive.File {
-		if file.Name == fname {
-			targetobj := strings.Replace(fname, ".csv", "_"+fmt.Sprintf("%v", time.Now().Unix())+".csv", 1)
-			// write to GCS
-			log.Printf("Transfering %s to bucket: %s/%s\n", file.Name, appconfig.gcsbucket, targetobj)
-			flatfile, err := file.Open()
-			if err != nil {
-				return fmt.Errorf("could not retrieve contents of %s : %v ", file.Name, err)
-			}
+		for _, archive := range dashboard.Archives {
+			if file.Name == archive.Filename {
+				targetobj := archive.Destinationprefix + "_" + fmt.Sprintf("%v", time.Now().Unix()) + ".csv"
+				// write to GCS
+				log.Printf("Transfering %s to bucket: %s/%s\n", file.Name, dashboard.Bucket, targetobj)
+				flatfile, err := file.Open()
+				if err != nil {
+					return fmt.Errorf("could not retrieve contents of %s : %v ", file.Name, err)
+				}
 
-			filearray, _ := io.ReadAll(flatfile)
-			err = WriteFileToGCS(appconfig.gcsbucket, targetobj, filearray)
-			if err != nil {
-				return err
+				filearray, _ := io.ReadAll(flatfile)
+				err = WriteFileToGCS(dashboard.Bucket, targetobj, filearray)
+				if err != nil {
+					return err
+				}
 			}
-
 		}
 	}
 
