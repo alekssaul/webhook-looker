@@ -78,7 +78,6 @@ func HttpHandler(w http.ResponseWriter, r *http.Request, appconfig *AppConfig, v
 	// Check to see if we have a configuration for the request
 	found := false
 	for i, dashboard := range appconfig.Dashboards {
-		log.Printf("Webhook for Dashboard : %s \n", rB.ScheduledPlan.Title)
 		// find Configuration for Request Body
 		if dashboard.Name == rB.ScheduledPlan.Title {
 			found = true
