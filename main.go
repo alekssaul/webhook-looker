@@ -112,7 +112,9 @@ func DataFromZipToGCS(b64 string, dashboard *Dashboard) (e error) {
 		return fmt.Errorf("could not unzip the payload data : %v", err.Error()[0:50])
 	}
 
+	log.Printf("looping throught he archive file ... ")
 	for _, file := range archive.File {
+		log.Printf("Filename: %s ", file.Name)
 		for _, archive := range dashboard.Archives {
 			if file.Name == archive.Filename {
 				targetobj := archive.Destinationprefix + "-" + fmt.Sprintf("%v", time.Now().Unix()) + ".csv"
